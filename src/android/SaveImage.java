@@ -17,8 +17,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Environment;
 import android.util.Log;
@@ -32,7 +34,7 @@ public class SaveImage extends CordovaPlugin {
     private final String WRITE_EXTERNAL_STORAGE = Manifest.permission.WRITE_EXTERNAL_STORAGE;
     private CallbackContext callbackContext;
     private String filePath;
-    
+
 
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
@@ -51,27 +53,27 @@ public class SaveImage extends CordovaPlugin {
      * @param callbackContext   callback id for optional progress reports
      *
      * args[0] filePath         file path string to image file to be saved to gallery
-     */  
+     */
     private void saveImageToGallery(JSONArray args, CallbackContext callback) throws JSONException {
     	this.filePath = args.getString(0);
     	this.callbackContext = callback;
         Log.d("SaveImage", "SaveImage in filePath: " + filePath);
-        
+
         if (filePath == null || filePath.equals("")) {
         	callback.error("Missing filePath");
             return;
         }
-        
-        if (PermissionHelper.hasPermission(this, WRITE_EXTERNAL_STORAGE)) {
-        	Log.d("SaveImage", "Permissions already granted, or Android version is lower than 6");
-        	performImageSave();
-        } else {
-        	Log.d("SaveImage", "Requesting permissions for WRITE_EXTERNAL_STORAGE");
-        	PermissionHelper.requestPermission(this, WRITE_PERM_REQUEST_CODE, WRITE_EXTERNAL_STORAGE);
-        }      
+
+
+        /**
+         * We have removed all permission checks for now. Not sure if it is necessary; but the WRITE_EXTERNAL_STORAGE permission
+         * has been deprecated and not available since Android Platform SDK 28.
+         */
+
+        performImageSave();
     }
-    
-    
+
+
     /**
      * Save image to device gallery
      */
@@ -164,12 +166,24 @@ public class SaveImage extends CordovaPlugin {
      * @param imageFile The image file to be scanned by the media scanner
      */
     private void scanPhoto(File imageFile) {
-        Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
-        Uri contentUri = Uri.fromFile(imageFile);
-        mediaScanIntent.setData(contentUri);
-        cordova.getActivity().sendBroadcast(mediaScanIntent);
+        Context context = cordova.getActivity().getApplicationContext();
+        Log.d("SaveImage", "Attempting to scan file: " + imageFile.getAbsolutePath());
+        try {
+            MediaScannerConnection.scanFile(context,
+                                            new String[]{imageFile.getAbsolutePath()},
+                                            null,
+                                            new MediaScannerConnection.OnScanCompletedListener() {
+                                                public void onScanCompleted(String path, Uri uri) {
+                                                    Log.i("SaveImage", "Scanned " + path + ":");
+                                                    Log.i("SaveImage", "-> uri=" + uri);
+                                                }
+                                            });
+        } catch (Exception e) {
+            Log.e("SaveImage", "Error scanning file: " + imageFile.getAbsolutePath(), e);
+            callbackContext.error("Error scanning file: " + e.getMessage());
+        }
     }
-    
+
 
     /**
      * Callback from PermissionHelper.requestPermission method
@@ -182,7 +196,7 @@ public class SaveImage extends CordovaPlugin {
 				return;
 			}
 		}
-		
+
 		switch (requestCode) {
 		case WRITE_PERM_REQUEST_CODE:
 			Log.d("SaveImage", "User granted the permission for WRITE_EXTERNAL_STORAGE");
